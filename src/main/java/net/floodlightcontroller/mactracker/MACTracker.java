@@ -6,7 +6,6 @@ import java.util.Map;
 
 import org.projectfloodlight.openflow.protocol.OFMessage;
 import org.projectfloodlight.openflow.protocol.OFType;
-import org.projectfloodlight.openflow.types.EthType;
 import org.projectfloodlight.openflow.types.IpProtocol;
 import org.projectfloodlight.openflow.util.HexString;
 
@@ -20,7 +19,6 @@ import net.floodlightcontroller.core.module.IFloodlightModule;
 import net.floodlightcontroller.core.module.IFloodlightService;
 import net.floodlightcontroller.packet.Ethernet;
 import net.floodlightcontroller.packet.ICMP;
-import net.floodlightcontroller.packet.IPacket;
 import net.floodlightcontroller.packet.IPv4;
 
 public class MACTracker implements IOFMessageListener, IFloodlightModule {
@@ -93,12 +91,12 @@ public class MACTracker implements IOFMessageListener, IFloodlightModule {
 		IPv4 pkt = (IPv4) eth.getPayload();
 		if ( pkt.getProtocol() == IpProtocol.ICMP ){
 			ICMP icmp = (ICMP) pkt.getPayload();
-			if (icmp.getIcmpType() == ICMP.ECHO_REPLY || icmp.getIcmpType() == ICMP.ECHO_REQUEST){
+			//if (icmp.getIcmpType() == ICMP.ECHO_REPLY || icmp.getIcmpType() == ICMP.ECHO_REQUEST){
 				// Print the source MAC address
 			    Long sourceMACHash = Ethernet.toLong(eth.getSourceMACAddress().getBytes());
-			    System.out.printf("MAC Address: {%s} seen on switch: {%s}\n",HexString.toHexString(sourceMACHash),sw.getId());   
-			    // Let other modules process the packet
-			}
+			    //System.err.printf("MAC Address: {%s} seen on switch: {%s}\n",HexString.toHexString(sourceMACHash),sw.getId());   
+			    
+			//}
 		}
 		
 	    return Command.CONTINUE;

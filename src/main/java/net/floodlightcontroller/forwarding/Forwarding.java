@@ -85,12 +85,14 @@ public class Forwarding extends ForwardingBase implements IFloodlightModule {
 	public Command processPacketInMessage(IOFSwitch sw, OFPacketIn pi, IRoutingDecision decision, FloodlightContext cntx) {
 		
 		Ethernet eth = IFloodlightProviderService.bcStore.get(cntx, IFloodlightProviderService.CONTEXT_PI_PAYLOAD);
+		
+		
 		// We found a routing decision (i.e. Firewall is enabled... it's the only thing that makes RoutingDecisions)
 		if (decision != null) {
 			if (log.isTraceEnabled()) {
 				log.trace("Forwaring decision={} was made for PacketIn={}", decision.getRoutingAction().toString(), pi);
 			}
-
+			
 			switch(decision.getRoutingAction()) {
 			case NONE:
 				// don't do anything
@@ -212,15 +214,15 @@ public class Forwarding extends ForwardingBase implements IFloodlightModule {
 				}
 				return;
 			}
-
+			
 			// Install all the routes where both src and dst have attachment
 			// points.  Since the lists are stored in sorted order we can
 			// traverse the attachment points in O(m+n) time
-			SwitchPort[] srcDaps = srcDevice.getAttachmentPoints();
+			SwitchPort[] srcDaps = srcDevice.getAttachmentPoints(); //h11-port e h12-port
 			Arrays.sort(srcDaps, clusterIdComparator);
-			SwitchPort[] dstDaps = dstDevice.getAttachmentPoints();
+			SwitchPort[] dstDaps = dstDevice.getAttachmentPoints(); //h41-port a h42-port
 			Arrays.sort(dstDaps, clusterIdComparator);
-
+			
 			int iSrcDaps = 0, iDstDaps = 0;
 
 			while ((iSrcDaps < srcDaps.length) && (iDstDaps < dstDaps.length)) {
@@ -231,7 +233,7 @@ public class Forwarding extends ForwardingBase implements IFloodlightModule {
 				// every switch will be at least in its own L2 domain.
 				DatapathId srcCluster = topologyService.getL2DomainId(srcDap.getSwitchDPID());
 				DatapathId dstCluster = topologyService.getL2DomainId(dstDap.getSwitchDPID());
-
+				
 				int srcVsDest = srcCluster.compareTo(dstCluster);
 				if (srcVsDest == 0) {
 					if (!srcDap.equals(dstDap)) {
@@ -248,7 +250,10 @@ public class Forwarding extends ForwardingBase implements IFloodlightModule {
 										dstDap.getSwitchDPID(),
 										dstDap.getPort()});
 							}
+							
 
+							System.err.println("Route: "+route.getPath().toString());
+							
 							U64 cookie = AppCookie.makeCookie(FORWARDING_APP_ID, 0);
 
 							Match m = createMatchFromPacket(sw, inPort, cntx);

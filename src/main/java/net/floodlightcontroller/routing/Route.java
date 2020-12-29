@@ -113,11 +113,13 @@ public class Route implements Comparable<Route> {
                 return false;
         } else if (!id.equals(other.id))
             return false;
+        
         if (switchPorts == null) {
             if (other.switchPorts != null)
                 return false;
         } else if (!switchPorts.equals(other.switchPorts))
             return false;
+        
         return true;
     }
 

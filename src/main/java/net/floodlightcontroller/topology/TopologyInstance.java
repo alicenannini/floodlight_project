@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.PriorityQueue;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
 import org.projectfloodlight.openflow.types.DatapathId;
@@ -159,7 +160,7 @@ public class TopologyInstance {
 
         pathcache = CacheBuilder.newBuilder().concurrencyLevel(4)
                     .maximumSize(1000L)
-                    //.expireAfterWrite(5, TimeUnit.SECONDS)
+                    .expireAfterWrite(Long.MAX_VALUE, TimeUnit.MINUTES)
                     .build(
                             new CacheLoader<RouteId, List<Route>>() {
                                 public List<Route> load(RouteId rid) {
@@ -548,10 +549,9 @@ public class TopologyInstance {
     }
 
     protected void calculateShortestPathTreeInClusters() {
-        pathcache.invalidateAll();
+        //pathcache.invalidateAll();
         destinationRootedTrees.clear();
         
-        List<Route> routes;
         Map<Link, Integer> linkCost = new HashMap<Link, Integer>();
         int tunnel_weight = switchPorts.size() + 1;
 
@@ -566,19 +566,43 @@ public class TopologyInstance {
         for(Cluster c: clusters) {
             for (DatapathId node : c.links.keySet()) {
                 BroadcastTree tree = dijkstra(c, node, linkCost, true);
+                //System.err.println("Tree: "+tree.toString());
                 destinationRootedTrees.put(node, tree);
                 
-                /* TODO: aggiungere routes alla cache */
+                /* TODO: aggiungere routes alla cache 
              	Set<DatapathId> dst = tree.getCosts().keySet();
              	for(DatapathId dstNode : dst){
              		RouteId rid = new RouteId(node, dstNode);
-             		routes = buildroute(rid);
-             		//pathcache.put(rid,routes);
-             	}
+             		//buildcache(rid);
+             		List<Route> routes = buildroute(rid);
+             		
+             	}*/
                 
             }
         }
     }
+    
+    /*void buildcache(RouteId rid){
+		List<Route> routes = buildroute(rid);
+		
+    	if(pathcache.get(rid)!=null && !pathcache.get(rid).isEmpty()){
+			boolean equal = true;
+			List<Route> oldRoutes = pathcache.get(rid);
+			
+			if(routes.size() == oldRoutes.size()){
+		    	for(int i = 0; i<routes.size(); i++){
+		    		if(! routes.get(i).equals(oldRoutes.get(i)))
+		    			equal = false;
+		    	}
+			}else
+				equal = false;
+			
+			if(!equal)
+				pathcache.put(rid,routes);
+    	}else
+    		pathcache.put(rid,routes);
+    		
+    }*/
 
     protected void calculateBroadcastTreeInClusters() {
         for(Cluster c: clusters) {
@@ -622,15 +646,15 @@ public class TopologyInstance {
         
         List<Route> resultList = new ArrayList<Route>();
         
+        if (destinationRootedTrees == null) return null;
+        if (destinationRootedTrees.get(dstId) == null) return null;
+        
+        BroadcastTree dstTree = destinationRootedTrees.get(dstId);
+        Map<DatapathId, List<Link>> nexthoplinks = dstTree.getLinks();
+        
         while(true){
 	        LinkedList<NodePortTuple> switchPorts = new LinkedList<NodePortTuple>();
-	
-	        if (destinationRootedTrees == null) return null;
-	        if (destinationRootedTrees.get(dstId) == null) return null;
 	        
-	        BroadcastTree dstTree = destinationRootedTrees.get(dstId);
-	        Map<DatapathId, List<Link>> nexthoplinks = dstTree.getLinks();
-	
 	        if (!switches.contains(srcId) || !switches.contains(dstId)) {
 	            // This is a switch that is not connected to any other switch
 	            // hence there was no update for links (and hence it is not
@@ -642,7 +666,7 @@ public class TopologyInstance {
 	
 	        } else if ((nexthoplinks!=null) && (nexthoplinks.get(srcId) != null)) {
 	            while (!srcId.equals(dstId)) {
-	            	
+	            	//System.err.println("List link: "+nexthoplinks.get(srcId).toString());
 	                /* TODO: qui sto creando tutti i path possibili */
 	                Link l = dstTree.getScheduledLink(srcId);
 	                dstTree.scheduleLink(srcId);
@@ -659,6 +683,7 @@ public class TopologyInstance {
 	        Route result = null;
 	        if (switchPorts != null && !switchPorts.isEmpty()) {
 	            result = new Route(id, switchPorts);
+	            
 	        }
 	        if (log.isTraceEnabled()) {
 	            log.trace("buildroute: {}", result);
@@ -666,9 +691,11 @@ public class TopologyInstance {
 	        
 	        if(resultList.contains(result))
 	        	break;
-	        
+	        	
 	        resultList.add(result);
+	        srcId = id.getSrc();
         }
+        destinationRootedTrees.put(dstId,dstTree);
         //System.err.println("List of routes: "+resultList.toString());
         return resultList;
     }
@@ -697,7 +724,7 @@ public class TopologyInstance {
     }
     
 
-    protected Route getRoute(ServiceChain sc, DatapathId srcId, OFPort srcPort,
+    protected List<Route> getRoute(ServiceChain sc, DatapathId srcId, OFPort srcPort,
             DatapathId dstId, OFPort dstPort, U64 cookie) {
 
 
@@ -706,12 +733,22 @@ public class TopologyInstance {
         if (srcId.equals(dstId) && srcPort.equals(dstPort))
             return null;
 
-        List<NodePortTuple> nptList;
-        NodePortTuple npt;
-        Route r = getRoute(srcId, dstId, U64.of(0));
+        List<Route> r = getRoute(srcId, dstId, U64.of(0));
+        
         if (r == null && !srcId.equals(dstId)) return null;
 
-        if (r != null) {
+        /*
+        r = getWholeRoute(r,srcId,srcPort,dstId,dstPort); 
+        */
+        return r;
+    }
+    
+    protected Route getWholeRoute(Route r, DatapathId srcId, OFPort srcPort,
+            DatapathId dstId, OFPort dstPort){
+    	List<NodePortTuple> nptList;
+        NodePortTuple npt;
+    	
+    	if (r != null) {
             nptList= new ArrayList<NodePortTuple>(r.getPath());
         } else {
             nptList = new ArrayList<NodePortTuple>();
@@ -729,27 +766,30 @@ public class TopologyInstance {
     // NOTE: Return a null route if srcId equals dstId.  The null route
     // need not be stored in the cache.  Moreover, the LoadingCache will
     // throw an exception if null route is returned.
-    protected Route getRoute(DatapathId srcId, DatapathId dstId, U64 cookie) {
+    protected List<Route> getRoute(DatapathId srcId, DatapathId dstId, U64 cookie) {
         // Return null route if srcId equals dstId
         if (srcId.equals(dstId)) return null;
 
-
+        List<Route> resultList = null;
         RouteId id = new RouteId(srcId, dstId);
         Route result = null;
 
         try {
-        	pathcache.apply(id);
-            List<Route> resultList = pathcache.get(id);
+        	/*if(pathcache.get(id)==null || pathcache.get(id).isEmpty())
+        		buildcache(id);
+        	resultList = pathcache.get(id);
             result = roundRobin(id, resultList);
-            //System.err.println("RoundRobin cache: "+result.toString());
+            System.err.println("RoundRobin cache: "+result.toString());*/
+        	resultList = pathcache.get(id);
         } catch (Exception e) {
             log.error("{}", e);
         }
 
         if (log.isTraceEnabled()) {
-            log.trace("getRoute: {} -> {}", id, result);
+            log.trace("getRoute: {} -> {}", id, resultList);
         }
-        return result;
+        
+        return resultList;
     }
     
     protected Route roundRobin(RouteId rid, List<Route> list){

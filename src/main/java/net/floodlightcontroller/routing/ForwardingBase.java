@@ -82,7 +82,7 @@ public abstract class ForwardingBase implements IOFMessageListener {
 	protected static int OFMESSAGE_DAMPER_CAPACITY = 10000; // TODO: find sweet spot
 	protected static int OFMESSAGE_DAMPER_TIMEOUT = 250; // ms
 
-	public static int FLOWMOD_DEFAULT_IDLE_TIMEOUT = 5; // in seconds
+	public static int FLOWMOD_DEFAULT_IDLE_TIMEOUT = 1; // in seconds
 	public static int FLOWMOD_DEFAULT_HARD_TIMEOUT = 0; // infinite
 	public static int FLOWMOD_DEFAULT_PRIORITY = 1; // 0 is the default table-miss flow in OF1.3+, so we need to use 1
 	
@@ -214,13 +214,14 @@ public abstract class ForwardingBase implements IOFMessageListener {
 								"flow modification to a switch",
 								recommendation=LogMessageDoc.CHECK_SWITCH)
 	})
+	
 	public boolean pushRoute(Route route, Match match, OFPacketIn pi,
 			DatapathId pinSwitch, U64 cookie, FloodlightContext cntx,
 			boolean reqeustFlowRemovedNotifn, boolean doFlush,
 			OFFlowModCommand flowModCommand) {
 
 		boolean srcSwitchIncluded = false;
-
+		
 		List<NodePortTuple> switchPortList = route.getPath();
 
 		for (int indx = switchPortList.size() - 1; indx > 0; indx -= 2) {
@@ -259,7 +260,7 @@ public abstract class ForwardingBase implements IOFMessageListener {
 			
 			OFActionOutput.Builder aob = sw.getOFFactory().actions().buildOutput();
 			List<OFAction> actions = new ArrayList<OFAction>();	
-			Match.Builder mb = MatchUtils.createRetentiveBuilder(match);
+			Match.Builder mb = MatchUtils.createForgetfulBuilder(match);
 
 			// set input and output ports on the switch
 			OFPort outPort = switchPortList.get(indx).getPortId();

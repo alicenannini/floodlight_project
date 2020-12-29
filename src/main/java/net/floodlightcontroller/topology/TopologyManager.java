@@ -58,10 +58,12 @@ import net.floodlightcontroller.linkdiscovery.ILinkDiscoveryService;
 import net.floodlightcontroller.packet.BSN;
 import net.floodlightcontroller.packet.Ethernet;
 import net.floodlightcontroller.packet.LLDP;
+import net.floodlightcontroller.packet.ICMP;
 import net.floodlightcontroller.restserver.IRestApiService;
 import net.floodlightcontroller.routing.IRoutingService;
 import net.floodlightcontroller.routing.Link;
 import net.floodlightcontroller.routing.Route;
+import net.floodlightcontroller.routing.RouteId;
 import net.floodlightcontroller.threadpool.IThreadPoolService;
 import net.floodlightcontroller.topology.web.TopologyWebRoutable;
 
@@ -86,7 +88,71 @@ import org.slf4j.LoggerFactory;
  */
 @LogMessageCategory("Network Topology")
 public class TopologyManager implements IFloodlightModule, ITopologyService, IRoutingService, ILinkDiscoveryListener, IOFMessageListener {
+	
+	protected Map<RouteId,Integer> lastScheduledRoutes = new HashMap<RouteId,Integer>();
+	protected Map<PathId,Integer> scheduledPaths = new HashMap<PathId,Integer>();
+	protected Map<RouteId,OFBufferId> lastIcmpTypes = new HashMap<RouteId,OFBufferId>();
+	
+	protected class PathId implements Comparable<PathId>{
+		NodePortTuple src;
+		NodePortTuple dst;
+		
+		PathId(NodePortTuple src,NodePortTuple dst){
+			this.src = src;
+			this.dst = dst;
+		}
+		
+		PathId(DatapathId src, OFPort sp, DatapathId dst, OFPort dp){
+			this.src = new NodePortTuple(src,sp);
+			this.dst = new NodePortTuple(dst,dp);
+		}
+		
+		public String toString(){
+			return "Src: ("+src.toString()+"; Dst: "+dst.toString();
+		}
+		
+		@Override
+	    public boolean equals(Object obj) {
+	        if (this == obj)
+	            return true;
+	        if (obj == null)
+	            return false;
+	        if (getClass() != obj.getClass())
+	            return false;
+	        PathId other = (PathId) obj;
+	        if (dst == null) {
+	            if (other.dst != null)
+	                return false;
+	        } else if (!dst.equals(other.dst))
+	            return false;
+	        if (src == null) {
+	            if (other.src != null)
+	                return false;
+	        } else if (!src.equals(other.src))
+	            return false;
+	        return true;
+	    }
+		
+		@Override
+	    public int hashCode() {
+	        final int prime = 2417;
+	        Long result = new Long(1);
+	        result = prime * result + ((dst == null) ? 0 : dst.hashCode());
+	        result = prime * result + ((src == null) ? 0 : src.hashCode());
+	        // To cope with long cookie, use Long to compute hash then use Long's 
+	        // built-in hash to produce int hash code
+	        return result.hashCode(); 
+	    }
 
+		@Override
+		public int compareTo(PathId o) {
+			int result = src.compareTo(o.src);
+	        if (result != 0)
+	            return result;
+	        return dst.compareTo(o.dst);
+		}
+	}
+	
 	protected static Logger log = LoggerFactory.getLogger(TopologyManager.class);
 
 	public static final String MODULE_NAME = "topology";
@@ -285,8 +351,8 @@ public class TopologyManager implements IFloodlightModule, ITopologyService, IRo
 				log.error("Error in topology instance task thread", e);
 			} finally {
 				if (floodlightProviderService.getRole() != HARole.STANDBY)
-					newInstanceTask.reschedule(TOPOLOGY_COMPUTE_INTERVAL_MS,
-							TimeUnit.MILLISECONDS);
+					newInstanceTask.reschedule(10,
+							TimeUnit.SECONDS);
 			}
 		}
 	}
@@ -681,11 +747,16 @@ public class TopologyManager implements IFloodlightModule, ITopologyService, IRo
 	@Override
 	public Route getRoute(DatapathId src, DatapathId dst, U64 cookie, boolean tunnelEnabled) {
 		TopologyInstance ti = getCurrentInstance(tunnelEnabled);
-		return ti.getRoute(src, dst, cookie);
+		List<Route> routes = ti.getRoute(src, dst, cookie);
+		Route r = null;
+		if(routes != null)
+			r = scheduleNewRoute(src,null,dst,null,routes);
+		return r;
 	}
 
 	@Override
 	public Route getRoute(DatapathId src, OFPort srcPort, DatapathId dst, OFPort dstPort, U64 cookie) {
+		
 		return getRoute(src, srcPort, dst, dstPort, cookie, true);
 	}
 
@@ -693,7 +764,38 @@ public class TopologyManager implements IFloodlightModule, ITopologyService, IRo
 	public Route getRoute(DatapathId src, OFPort srcPort, DatapathId dst, OFPort dstPort, U64 cookie,
 			boolean tunnelEnabled) {
 		TopologyInstance ti = getCurrentInstance(tunnelEnabled);
-		return ti.getRoute(null, src, srcPort, dst, dstPort, cookie);
+		List<Route> routes = ti.getRoute(null, src, srcPort, dst, dstPort, cookie);
+		Route r = null;
+		PathId pid = new PathId(src,srcPort,dst,dstPort);
+		
+		if(routes != null){
+			if(scheduledPaths.get(pid)!=null){
+				r = routes.get(scheduledPaths.get(pid));
+				r = ti.getWholeRoute(r, src, srcPort, dst, dstPort);
+			}else{
+				r = scheduleNewRoute(src,srcPort,dst,dstPort,routes);
+				r = ti.getWholeRoute(r, src, srcPort, dst, dstPort);
+		
+			}
+		}
+		
+		return r;
+	}
+	
+	private Route scheduleNewRoute(DatapathId src, OFPort srcPort, DatapathId dst, OFPort dstPort, List<Route> routes){
+		PathId pid = new PathId(src,srcPort,dst,dstPort);
+		RouteId rid = new RouteId(src,dst);
+		if(lastScheduledRoutes.get(rid) == null || lastScheduledRoutes.get(rid) < 0){
+			lastScheduledRoutes.put(rid, 0);
+			scheduledPaths.put(pid,0);
+			return routes.get(0);
+		}else{
+			int last = lastScheduledRoutes.get(rid);
+			last = (last+1)%routes.size();
+			lastScheduledRoutes.put(rid, last);
+			scheduledPaths.put(pid,last);
+			return routes.get(last);
+		}
 	}
 
 	@Override

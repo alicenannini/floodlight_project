@@ -24,7 +24,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.PriorityQueue;
 import java.util.Set;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
 import org.projectfloodlight.openflow.types.DatapathId;
@@ -45,6 +44,8 @@ import net.floodlightcontroller.routing.Link;
 import net.floodlightcontroller.routing.Route;
 import net.floodlightcontroller.routing.RouteId;
 import net.floodlightcontroller.servicechaining.ServiceChain;
+import net.floodlightcontroller.statistics.IStatisticsService;
+import net.floodlightcontroller.statistics.SwitchPortBandwidth;
 
 /**
  * A representation of a network topology.  Used internally by
@@ -52,7 +53,10 @@ import net.floodlightcontroller.servicechaining.ServiceChain;
  */
 @LogMessageCategory("Network Topology")
 public class TopologyInstance {
-
+	
+	protected IStatisticsService statisticsCollectorService;
+	protected static final U64 TX_THRESHOLD = U64.of(1000);
+	
     public static final short LT_SH_LINK = 1;
     public static final short LT_BD_LINK = 2;
     public static final short LT_TUNNEL  = 3;
@@ -115,7 +119,8 @@ public class TopologyInstance {
 
     public TopologyInstance(Map<DatapathId, Set<OFPort>> switchPorts,
                             Map<NodePortTuple, Set<Link>> switchPortLinks,
-                            Set<NodePortTuple> broadcastDomainPorts)
+                            Set<NodePortTuple> broadcastDomainPorts,
+                            IStatisticsService statisticsCollector)
     {
         this.switches = new HashSet<DatapathId>(switchPorts.keySet());
         this.switchPorts = new HashMap<DatapathId, Set<OFPort>>(switchPorts);
@@ -128,12 +133,14 @@ public class TopologyInstance {
 
         clusters = new HashSet<Cluster>();
         switchClusterMap = new HashMap<DatapathId, Cluster>();
+        this.statisticsCollectorService = statisticsCollector;
     }
     public TopologyInstance(Map<DatapathId, Set<OFPort>> switchPorts,
                             Set<NodePortTuple> blockedPorts,
                             Map<NodePortTuple, Set<Link>> switchPortLinks,
                             Set<NodePortTuple> broadcastDomainPorts,
-                            Set<NodePortTuple> tunnelPorts){
+                            Set<NodePortTuple> tunnelPorts,
+                            IStatisticsService statisticsCollector){
 
         // copy these structures
         this.switches = new HashSet<DatapathId>(switchPorts.keySet());
@@ -167,7 +174,8 @@ public class TopologyInstance {
                                     return pathCacheLoader.load(rid);
                                 }
                             });
-        //pathcache = new HashMap<RouteId,List<Route>>();
+        
+        this.statisticsCollectorService = statisticsCollector;
     }
 
     public void compute() {
@@ -527,6 +535,10 @@ public class TopologyInstance {
 
                 int ndist = cdist + w; // the weight of the link, always 1 in current version of floodlight.
                 if (ndist <= cost.get(neighbor)) {
+                	
+                	if( isLinkCongested(link,isDstRooted) )
+                		continue;
+                	
                     cost.put(neighbor, ndist);
                     List<Link> templinks = nexthoplinks.get(neighbor);
                     if (templinks == null) templinks = new ArrayList<Link>();
@@ -546,6 +558,27 @@ public class TopologyInstance {
 
         BroadcastTree ret = new BroadcastTree(nexthoplinks, cost);
         return ret;
+    }
+    
+    protected boolean isLinkCongested(Link link, boolean isDstRooted){
+    	if(this.statisticsCollectorService != null){
+        	SwitchPortBandwidth spb = null;
+        	if(isDstRooted){
+        		spb = statisticsCollectorService.getBandwidthConsumption(link.getSrc(),link.getSrcPort());
+        	}else{
+        		spb = statisticsCollectorService.getBandwidthConsumption(link.getDst(),link.getDstPort());
+        	}
+        	//check threshold;
+        	if (spb != null && spb.getBitsPerSecondTx().compareTo(TX_THRESHOLD) > 0){
+            	System.err.println(link+": TxBitsPerSec: "+spb.getBitsPerSecondTx()+", over threshold;");
+        		return true;
+        	}else if (spb != null)
+        		System.err.println(link+": TxBitsPerSec: "+spb.getBitsPerSecondTx()+", GOOD;");
+        	
+    	}else
+    		System.err.println("statisticsCollector is NULL");
+    	
+    	return false;
     }
 
     protected void calculateShortestPathTreeInClusters() {
@@ -567,42 +600,10 @@ public class TopologyInstance {
             for (DatapathId node : c.links.keySet()) {
                 BroadcastTree tree = dijkstra(c, node, linkCost, true);
                 //System.err.println("Tree: "+tree.toString());
-                destinationRootedTrees.put(node, tree);
-                
-                /* TODO: aggiungere routes alla cache 
-             	Set<DatapathId> dst = tree.getCosts().keySet();
-             	for(DatapathId dstNode : dst){
-             		RouteId rid = new RouteId(node, dstNode);
-             		//buildcache(rid);
-             		List<Route> routes = buildroute(rid);
-             		
-             	}*/
-                
+                destinationRootedTrees.put(node, tree);               
             }
         }
     }
-    
-    /*void buildcache(RouteId rid){
-		List<Route> routes = buildroute(rid);
-		
-    	if(pathcache.get(rid)!=null && !pathcache.get(rid).isEmpty()){
-			boolean equal = true;
-			List<Route> oldRoutes = pathcache.get(rid);
-			
-			if(routes.size() == oldRoutes.size()){
-		    	for(int i = 0; i<routes.size(); i++){
-		    		if(! routes.get(i).equals(oldRoutes.get(i)))
-		    			equal = false;
-		    	}
-			}else
-				equal = false;
-			
-			if(!equal)
-				pathcache.put(rid,routes);
-    	}else
-    		pathcache.put(rid,routes);
-    		
-    }*/
 
     protected void calculateBroadcastTreeInClusters() {
         for(Cluster c: clusters) {
@@ -772,14 +773,8 @@ public class TopologyInstance {
 
         List<Route> resultList = null;
         RouteId id = new RouteId(srcId, dstId);
-        Route result = null;
 
         try {
-        	/*if(pathcache.get(id)==null || pathcache.get(id).isEmpty())
-        		buildcache(id);
-        	resultList = pathcache.get(id);
-            result = roundRobin(id, resultList);
-            System.err.println("RoundRobin cache: "+result.toString());*/
         	resultList = pathcache.get(id);
         } catch (Exception e) {
             log.error("{}", e);
@@ -792,15 +787,7 @@ public class TopologyInstance {
         return resultList;
     }
     
-    protected Route roundRobin(RouteId rid, List<Route> list){
-    	int last = rid.getLastScheduledRoute();
-    	Route result = list.get(last);
-    	last = (last+1)%list.size();
-    	rid.setLastScheduledRoute(last);
-    	return result;
-    }
     
-
     protected BroadcastTree getBroadcastTreeForCluster(long clusterId){
         Cluster c = switchClusterMap.get(clusterId);
         if (c == null) return null;
@@ -929,5 +916,6 @@ public class TopologyInstance {
     getAllowedIncomingBroadcastPort(DatapathId src, OFPort srcPort) {
         return null;
     }
+
 }
 

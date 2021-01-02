@@ -29,7 +29,6 @@ public class RouteId implements Cloneable, Comparable<RouteId> {
     protected DatapathId src;
     protected DatapathId dst;
     protected U64 cookie;
-    protected int lastScheduledRoute = 0;
 
     public RouteId(DatapathId src, DatapathId dst) {
         super();
@@ -120,14 +119,6 @@ public class RouteId implements Cloneable, Comparable<RouteId> {
         if (result != 0)
             return result;
         return dst.compareTo(o.getDst());
-    }
-    
-    public int getLastScheduledRoute(){
-    	return this.lastScheduledRoute;
-    }
-    
-    public void setLastScheduledRoute(int i){
-    	this.lastScheduledRoute = i;
     }
 }
 

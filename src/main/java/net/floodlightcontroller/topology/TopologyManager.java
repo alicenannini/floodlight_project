@@ -58,12 +58,12 @@ import net.floodlightcontroller.linkdiscovery.ILinkDiscoveryService;
 import net.floodlightcontroller.packet.BSN;
 import net.floodlightcontroller.packet.Ethernet;
 import net.floodlightcontroller.packet.LLDP;
-import net.floodlightcontroller.packet.ICMP;
 import net.floodlightcontroller.restserver.IRestApiService;
 import net.floodlightcontroller.routing.IRoutingService;
 import net.floodlightcontroller.routing.Link;
 import net.floodlightcontroller.routing.Route;
 import net.floodlightcontroller.routing.RouteId;
+import net.floodlightcontroller.statistics.IStatisticsService;
 import net.floodlightcontroller.threadpool.IThreadPoolService;
 import net.floodlightcontroller.topology.web.TopologyWebRoutable;
 
@@ -196,6 +196,7 @@ public class TopologyManager implements IFloodlightModule, ITopologyService, IRo
 	protected IOFSwitchService switchService;
 	protected IRestApiService restApiService;
 	protected IDebugCounterService debugCounterService;
+	protected IStatisticsService statisticsCollectorService;
 
 	// Modules that listen to our updates
 	protected ArrayList<ITopologyListener> topologyAware;
@@ -351,8 +352,8 @@ public class TopologyManager implements IFloodlightModule, ITopologyService, IRo
 				log.error("Error in topology instance task thread", e);
 			} finally {
 				if (floodlightProviderService.getRole() != HARole.STANDBY)
-					newInstanceTask.reschedule(10,
-							TimeUnit.SECONDS);
+					newInstanceTask.reschedule(TOPOLOGY_COMPUTE_INTERVAL_MS,
+							TimeUnit.MILLISECONDS);
 			}
 		}
 	}
@@ -768,6 +769,9 @@ public class TopologyManager implements IFloodlightModule, ITopologyService, IRo
 		Route r = null;
 		PathId pid = new PathId(src,srcPort,dst,dstPort);
 		
+		if (routes == null && src.equals(dst))
+			r = ti.getWholeRoute(r, src, srcPort, dst, dstPort);
+		
 		if(routes != null){
 			if(scheduledPaths.get(pid)!=null){
 				r = routes.get(scheduledPaths.get(pid));
@@ -775,16 +779,18 @@ public class TopologyManager implements IFloodlightModule, ITopologyService, IRo
 			}else{
 				r = scheduleNewRoute(src,srcPort,dst,dstPort,routes);
 				r = ti.getWholeRoute(r, src, srcPort, dst, dstPort);
-		
 			}
 		}
 		
 		return r;
 	}
+
 	
 	private Route scheduleNewRoute(DatapathId src, OFPort srcPort, DatapathId dst, OFPort dstPort, List<Route> routes){
 		PathId pid = new PathId(src,srcPort,dst,dstPort);
 		RouteId rid = new RouteId(src,dst);
+		
+		
 		if(lastScheduledRoutes.get(rid) == null || lastScheduledRoutes.get(rid) < 0){
 			lastScheduledRoutes.put(rid, 0);
 			scheduledPaths.put(pid,0);
@@ -938,6 +944,7 @@ public class TopologyManager implements IFloodlightModule, ITopologyService, IRo
 		l.add(IDebugCounterService.class);
 		l.add(IDebugEventService.class);
 		l.add(IRestApiService.class);
+		l.add(IStatisticsService.class);
 		return l;
 	}
 
@@ -951,6 +958,7 @@ public class TopologyManager implements IFloodlightModule, ITopologyService, IRo
 		restApiService = context.getServiceImpl(IRestApiService.class);
 		debugCounterService = context.getServiceImpl(IDebugCounterService.class);
 		debugEventService = context.getServiceImpl(IDebugEventService.class);
+		statisticsCollectorService = context.getServiceImpl(IStatisticsService.class);
 
 		switchPorts = new HashMap<DatapathId, Set<OFPort>>();
 		switchPortLinks = new HashMap<NodePortTuple, Set<Link>>();
@@ -991,6 +999,7 @@ public class TopologyManager implements IFloodlightModule, ITopologyService, IRo
 					TimeUnit.MILLISECONDS);
 
 		linkDiscoveryService.addListener(this);
+		
 		floodlightProviderService.addOFMessageListener(OFType.PACKET_IN, this);
 		floodlightProviderService.addHAListener(this.haListener);
 		addRestletRoutable();
@@ -1326,7 +1335,7 @@ public class TopologyManager implements IFloodlightModule, ITopologyService, IRo
 				blockedPorts,
 				openflowLinks,
 				broadcastDomainPorts,
-				tunnelPorts);
+				tunnelPorts, this.statisticsCollectorService);
 		nt.compute();
 		// We set the instances with and without tunnels to be identical.
 		// If needed, we may compute them differently.

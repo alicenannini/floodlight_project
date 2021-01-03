@@ -35,7 +35,6 @@ import net.floodlightcontroller.core.module.FloodlightModuleException;
 import net.floodlightcontroller.core.module.IFloodlightModule;
 import net.floodlightcontroller.core.module.IFloodlightService;
 import net.floodlightcontroller.topology.NodePortTuple;
-import net.floodlightcontroller.debugcounter.IDebugCounter;
 import net.floodlightcontroller.debugcounter.IDebugCounterService;
 import net.floodlightcontroller.debugcounter.IDebugCounterService.MetaData;
 import net.floodlightcontroller.restserver.IRestApiService;
@@ -44,12 +43,11 @@ import net.floodlightcontroller.threadpool.IThreadPoolService;
 
 public class StatisticsCollector implements IFloodlightModule, IStatisticsService {
 	private static final Logger log = LoggerFactory.getLogger(StatisticsCollector.class);
-
+	
 	private static IOFSwitchService switchService;
 	private static IThreadPoolService threadPoolService;
 	private static IRestApiService restApiService;
 	protected IDebugCounterService debugCounterService;
-	private IDebugCounter counterPacketOut;
 
 	private static boolean isEnabled = false;
 
@@ -87,10 +85,23 @@ public class StatisticsCollector implements IFloodlightModule, IStatisticsServic
 	 * @author Ryan Izard, ryan.izard@bigswitch.com, rizard@g.clemson.edu
 	 *
 	 */
+	
+	public U64 getTxThreshold(){
+		return TX_THRESHOLD;
+	}
+	
+	public boolean isPortCongested(DatapathId dpid, OFPort p){
+		SwitchPortBandwidth spb = getBandwidthConsumption(dpid,p);
+		if(spb != null)
+			return (spb.getBitsPerSecondTx().compareTo(TX_THRESHOLD) > 0);
+		return false;
+	}
+	
 	protected class PortStatsCollector implements Runnable {
 
 		@Override
 		public void run() {
+						
 			Map<DatapathId, List<OFStatsReply>> replies = getSwitchStatistics(switchService.getAllSwitchDpids(), OFStatsType.PORT);
 			for (Entry<DatapathId, List<OFStatsReply>> e : replies.entrySet()) {
 				for (OFStatsReply r : e.getValue()) {
@@ -134,6 +145,7 @@ public class StatisticsCollector implements IFloodlightModule, IStatisticsServic
 									U64.ofRaw(Math.round((txBytesCounted.getValue() * BITS_PER_BYTE) / timeDifSec)),
 									pse.getRxBytes(), pse.getTxBytes())
 									);
+							
 							//log.info("portStats retrieved: {}", portStats);
 						} else { /* initialize */
 							tentativePortStats.put(npt, SwitchPortBandwidth.of(npt.getNodeId(), npt.getPortId(), U64.ZERO, U64.ZERO, U64.ZERO, pse.getRxBytes(), pse.getTxBytes()));
@@ -142,6 +154,8 @@ public class StatisticsCollector implements IFloodlightModule, IStatisticsServic
 				}
 			}
 		}
+		
+			
 
 		protected long getSpeed(NodePortTuple npt) {
 			IOFSwitch sw = switchService.getSwitch(npt.getNodeId());
@@ -283,7 +297,7 @@ public class StatisticsCollector implements IFloodlightModule, IStatisticsServic
 			startStatisticsCollection();
 		}
 		
-		counterPacketOut = debugCounterService.registerCounter("statistics", "packet-outs-written", "Packet outs written by the StatisticsCollector", MetaData.WARN);
+		debugCounterService.registerCounter("statistics", "packet-outs-written", "Packet outs written by the StatisticsCollector", MetaData.WARN);
 	}
 
 	/*

@@ -4,12 +4,17 @@ import java.util.Map;
 
 import org.projectfloodlight.openflow.types.DatapathId;
 import org.projectfloodlight.openflow.types.OFPort;
+import org.projectfloodlight.openflow.types.U64;
 
 import net.floodlightcontroller.core.module.IFloodlightService;
 import net.floodlightcontroller.topology.NodePortTuple;
 
 public interface IStatisticsService extends IFloodlightService {
-		
+	
+	static final U64 TX_THRESHOLD = U64.of(8000);
+	
+	U64 getTxThreshold();
+	
 	String setPortStatsPeriod(int period);
 
 	SwitchPortBandwidth getBandwidthConsumption(DatapathId dpid, OFPort p);
@@ -19,4 +24,6 @@ public interface IStatisticsService extends IFloodlightService {
 	void collectStatistics(boolean collect);
 
 	boolean isStatisticsCollectionEnabled();
+		
+	boolean isPortCongested(DatapathId dpid, OFPort p);
 }

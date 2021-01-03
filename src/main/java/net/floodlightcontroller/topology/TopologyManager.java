@@ -354,6 +354,8 @@ public class TopologyManager implements IFloodlightModule, ITopologyService, IRo
 				if (floodlightProviderService.getRole() != HARole.STANDBY)
 					newInstanceTask.reschedule(TOPOLOGY_COMPUTE_INTERVAL_MS,
 							TimeUnit.MILLISECONDS);
+				else 
+					System.err.println("HARole is "+floodlightProviderService.getRole());
 			}
 		}
 	}
@@ -791,7 +793,7 @@ public class TopologyManager implements IFloodlightModule, ITopologyService, IRo
 		RouteId rid = new RouteId(src,dst);
 		
 		
-		if(lastScheduledRoutes.get(rid) == null || lastScheduledRoutes.get(rid) < 0){
+		if(lastScheduledRoutes.get(rid) == null || lastScheduledRoutes.get(rid) < 0 || routes.size() == 1){
 			lastScheduledRoutes.put(rid, 0);
 			scheduledPaths.put(pid,0);
 			return routes.get(0);

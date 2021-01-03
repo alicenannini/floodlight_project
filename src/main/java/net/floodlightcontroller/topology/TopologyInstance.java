@@ -55,7 +55,6 @@ import net.floodlightcontroller.statistics.SwitchPortBandwidth;
 public class TopologyInstance {
 	
 	protected IStatisticsService statisticsCollectorService;
-	protected static final U64 TX_THRESHOLD = U64.of(1000);
 	
     public static final short LT_SH_LINK = 1;
     public static final short LT_BD_LINK = 2;
@@ -167,7 +166,7 @@ public class TopologyInstance {
 
         pathcache = CacheBuilder.newBuilder().concurrencyLevel(4)
                     .maximumSize(1000L)
-                    .expireAfterWrite(Long.MAX_VALUE, TimeUnit.MINUTES)
+                    .expireAfterWrite(10, TimeUnit.SECONDS)
                     .build(
                             new CacheLoader<RouteId, List<Route>>() {
                                 public List<Route> load(RouteId rid) {
@@ -569,14 +568,14 @@ public class TopologyInstance {
         		spb = statisticsCollectorService.getBandwidthConsumption(link.getDst(),link.getDstPort());
         	}
         	//check threshold;
-        	if (spb != null && spb.getBitsPerSecondTx().compareTo(TX_THRESHOLD) > 0){
+        	if (spb != null && spb.getBitsPerSecondTx().compareTo(statisticsCollectorService.getTxThreshold()) > 0){
             	System.err.println(link+": TxBitsPerSec: "+spb.getBitsPerSecondTx()+", over threshold;");
         		return true;
-        	}else if (spb != null)
-        		System.err.println(link+": TxBitsPerSec: "+spb.getBitsPerSecondTx()+", GOOD;");
+        	}
+        	//else if (spb != null) log.info(link+": TxBitsPerSec: "+spb.getBitsPerSecondTx()+", GOOD;");
         	
     	}else
-    		System.err.println("statisticsCollector is NULL");
+    		log.error("statisticsCollector is NULL");
     	
     	return false;
     }
@@ -603,6 +602,8 @@ public class TopologyInstance {
                 destinationRootedTrees.put(node, tree);               
             }
         }
+        
+        log.info("Calculated Broadcast Trees");
     }
 
     protected void calculateBroadcastTreeInClusters() {
@@ -695,6 +696,17 @@ public class TopologyInstance {
 	        	
 	        resultList.add(result);
 	        srcId = id.getSrc();
+	        
+	        if(id.getSrc().toString().equals("00:00:00:00:00:00:00:6f") &&  id.getDst().toString().equals("00:00:00:00:00:00:00:72")){
+	        	SwitchPortBandwidth spb = null;
+	        	for(NodePortTuple l : result.getPath()){
+	        		spb = this.statisticsCollectorService.getBandwidthConsumption(l.getNodeId(), l.getPortId());
+	        		if (spb != null && spb.getBitsPerSecondTx().compareTo(statisticsCollectorService.getTxThreshold()) > 0)
+	                	log.error(l+": TxBitsPerSec: "+spb.getBitsPerSecondTx()+", over threshold;");
+	            	else if (spb != null) log.info(l+": TxBitsPerSec: "+spb.getBitsPerSecondTx()+", GOOD;");
+	            	
+	        	}
+	        }
         }
         destinationRootedTrees.put(dstId,dstTree);
         //System.err.println("List of routes: "+resultList.toString());

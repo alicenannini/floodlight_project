@@ -252,7 +252,7 @@ public class Forwarding extends ForwardingBase implements IFloodlightModule {
 							}
 							
 
-							System.err.println("Route: "+route.getPath().toString());
+							//log.info("Scheduled Route: "+route.getPath().toString());
 							
 							U64 cookie = AppCookie.makeCookie(FORWARDING_APP_ID, 0);
 

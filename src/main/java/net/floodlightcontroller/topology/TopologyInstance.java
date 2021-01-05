@@ -603,7 +603,7 @@ public class TopologyInstance {
             }
         }
         
-        log.info("Calculated Broadcast Trees");
+        //log.info("Calculated Broadcast Trees");
     }
 
     protected void calculateBroadcastTreeInClusters() {
@@ -703,7 +703,7 @@ public class TopologyInstance {
 	        		spb = this.statisticsCollectorService.getBandwidthConsumption(l.getNodeId(), l.getPortId());
 	        		if (spb != null && spb.getBitsPerSecondTx().compareTo(statisticsCollectorService.getTxThreshold()) > 0)
 	                	log.error(l+": TxBitsPerSec: "+spb.getBitsPerSecondTx()+", over threshold;");
-	            	else if (spb != null) log.info(l+": TxBitsPerSec: "+spb.getBitsPerSecondTx()+", GOOD;");
+	            	//else if (spb != null) log.info(l+": TxBitsPerSec: "+spb.getBitsPerSecondTx()+", GOOD;");
 	            	
 	        	}
 	        }

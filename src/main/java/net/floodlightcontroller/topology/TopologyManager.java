@@ -91,7 +91,6 @@ public class TopologyManager implements IFloodlightModule, ITopologyService, IRo
 	
 	protected Map<RouteId,Integer> lastScheduledRoutes = new HashMap<RouteId,Integer>();
 	protected Map<PathId,Integer> scheduledPaths = new HashMap<PathId,Integer>();
-	protected Map<RouteId,OFBufferId> lastIcmpTypes = new HashMap<RouteId,OFBufferId>();
 	
 	protected class PathId implements Comparable<PathId>{
 		NodePortTuple src;

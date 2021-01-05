@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.PriorityQueue;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
 
 import org.projectfloodlight.openflow.types.DatapathId;
@@ -104,7 +105,6 @@ public class TopologyInstance {
     // in the cache.
     private final PathCacheLoader pathCacheLoader = new PathCacheLoader(this);
     protected LoadingCache<RouteId, List<Route>> pathcache;
-    //private Map<RouteId, List<Route>> pathcache;
 
     public TopologyInstance() {
         this.switches = new HashSet<DatapathId>();
@@ -496,13 +496,11 @@ public class TopologyInstance {
                                      Map<Link, Integer> linkCost,
                                      boolean isDstRooted) {
         HashMap<DatapathId, List<Link>> nexthoplinks = new HashMap<DatapathId, List<Link>>();
-        //HashMap<Long, Long> nexthopnodes = new HashMap<Long, Long>();
         HashMap<DatapathId, Integer> cost = new HashMap<DatapathId, Integer>();
         int w;
 
         for (DatapathId node: c.links.keySet()) {
             nexthoplinks.put(node, null);
-            //nexthopnodes.put(node, null);
             cost.put(node, MAX_PATH_WEIGHT);
         }
 
@@ -531,23 +529,25 @@ public class TopologyInstance {
 
                 if (linkCost == null || linkCost.get(link)==null) w = 1;
                 else w = linkCost.get(link);
+                
+                w += getTrafficLoad(link);
+                if(w > 1)
+                	System.out.println(link+": "+w);
 
-                int ndist = cdist + w; // the weight of the link, always 1 in current version of floodlight.
+                int ndist = cdist + w; // the weight of the link
                 if (ndist <= cost.get(neighbor)) {
-                	
-                	if( isLinkCongested(link,isDstRooted) )
-                		continue;
+                	/* TODO: comment line of linkCongested() */
+                	//if( isLinkCongested(link,isDstRooted) )
+                	//	continue;
                 	
                     cost.put(neighbor, ndist);
                     List<Link> templinks = nexthoplinks.get(neighbor);
                     if (templinks == null) templinks = new ArrayList<Link>();
                     templinks.add(link);
                     nexthoplinks.put(neighbor, templinks);
-                    //nexthopnodes.put(neighbor, cnode);
                     NodeDist ndTemp = new NodeDist(neighbor, ndist);
                     // Remove an object that's already in there.
-                    // Note that the comparison is based on only the node id,
-                    // and not node id and distance.
+                    // Note that the comparison is based on node id and distance.
                     nodeq.remove(ndTemp);
                     // add the current object to the queue.
                     nodeq.add(ndTemp);
@@ -557,6 +557,16 @@ public class TopologyInstance {
 
         BroadcastTree ret = new BroadcastTree(nexthoplinks, cost);
         return ret;
+    }
+    
+    protected int getTrafficLoad(Link link){
+    	SwitchPortBandwidth spb = statisticsCollectorService.getBandwidthConsumption(link.getSrc(),link.getSrcPort());
+    	if(spb != null){
+    		int value = spb.getBitsPerSecondTx().getBigInteger().intValue();
+    		// return traffic load in Megabits
+    		return value;
+    	}
+    	return 0;
     }
     
     protected boolean isLinkCongested(Link link, boolean isDstRooted){
@@ -569,7 +579,7 @@ public class TopologyInstance {
         	}
         	//check threshold;
         	if (spb != null && spb.getBitsPerSecondTx().compareTo(statisticsCollectorService.getTxThreshold()) > 0){
-            	System.err.println(link+": TxBitsPerSec: "+spb.getBitsPerSecondTx()+", over threshold;");
+            	log.error(link+": TxBitsPerSec: "+spb.getBitsPerSecondTx()+", over threshold;");
         		return true;
         	}
         	//else if (spb != null) log.info(link+": TxBitsPerSec: "+spb.getBitsPerSecondTx()+", GOOD;");
@@ -696,17 +706,19 @@ public class TopologyInstance {
 	        	
 	        resultList.add(result);
 	        srcId = id.getSrc();
-	        
+	        /*// prints to debug ping test between h11 and h41
 	        if(id.getSrc().toString().equals("00:00:00:00:00:00:00:6f") &&  id.getDst().toString().equals("00:00:00:00:00:00:00:72")){
 	        	SwitchPortBandwidth spb = null;
-	        	for(NodePortTuple l : result.getPath()){
-	        		spb = this.statisticsCollectorService.getBandwidthConsumption(l.getNodeId(), l.getPortId());
-	        		if (spb != null && spb.getBitsPerSecondTx().compareTo(statisticsCollectorService.getTxThreshold()) > 0)
-	                	log.error(l+": TxBitsPerSec: "+spb.getBitsPerSecondTx()+", over threshold;");
-	            	//else if (spb != null) log.info(l+": TxBitsPerSec: "+spb.getBitsPerSecondTx()+", GOOD;");
-	            	
-	        	}
-	        }
+	        	if (result != null){
+		        	for(NodePortTuple l : result.getPath()){
+		        		spb = this.statisticsCollectorService.getBandwidthConsumption(l.getNodeId(), l.getPortId());
+		        		if (spb != null && spb.getBitsPerSecondTx().compareTo(statisticsCollectorService.getTxThreshold()) > 0)
+		                	log.error(l+": TxBitsPerSec: "+spb.getBitsPerSecondTx()+", over threshold;");
+		            	//else if (spb != null) log.info(l+": TxBitsPerSec: "+spb.getBitsPerSecondTx()+", GOOD;");
+		            	
+		        	}
+	        	}else log.error("Traffic is all congested: no path is available");
+	        }*/
         }
         destinationRootedTrees.put(dstId,dstTree);
         //System.err.println("List of routes: "+resultList.toString());
@@ -788,6 +800,9 @@ public class TopologyInstance {
 
         try {
         	resultList = pathcache.get(id);
+        	// order list of routes based on traffic load
+        	//return orderRouteByCongestion(resultList);
+        	
         } catch (Exception e) {
             log.error("{}", e);
         }
@@ -799,6 +814,32 @@ public class TopologyInstance {
         return resultList;
     }
     
+    protected List<Route> orderRouteByCongestion(List<Route> list){
+    	Map<U64,Route> temp = new TreeMap<U64,Route>();
+		if(list != null){
+        	for(Route r : list){
+        		U64 tx = computeTrafficLoad(r);
+        		temp.put(tx,r);
+        	}      	
+    	}
+    	return new ArrayList<Route>(temp.values());
+    }
+    
+    protected U64 computeTrafficLoad(Route r){
+    	U64 tx = U64.of(0);
+    	if(r != null){
+    		List<NodePortTuple> l = r.getPath();
+    		for(int i=0; i<l.size();i=i+2){
+    			NodePortTuple npt = l.get(i);
+	    		if(npt!=null){
+	    			SwitchPortBandwidth spb = statisticsCollectorService.getBandwidthConsumption(npt.getNodeId(), npt.getPortId());
+	    			if(spb != null)
+	    				tx.add(spb.getBitsPerSecondTx());
+	    		}
+    		}
+    	}
+    	return tx;
+    }
     
     protected BroadcastTree getBroadcastTreeForCluster(long clusterId){
         Cluster c = switchClusterMap.get(clusterId);

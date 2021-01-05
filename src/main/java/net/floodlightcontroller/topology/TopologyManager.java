@@ -17,6 +17,7 @@
 package net.floodlightcontroller.topology;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
@@ -64,6 +65,7 @@ import net.floodlightcontroller.routing.Link;
 import net.floodlightcontroller.routing.Route;
 import net.floodlightcontroller.routing.RouteId;
 import net.floodlightcontroller.statistics.IStatisticsService;
+import net.floodlightcontroller.statistics.SwitchPortBandwidth;
 import net.floodlightcontroller.threadpool.IThreadPoolService;
 import net.floodlightcontroller.topology.web.TopologyWebRoutable;
 
@@ -90,7 +92,7 @@ import org.slf4j.LoggerFactory;
 public class TopologyManager implements IFloodlightModule, ITopologyService, IRoutingService, ILinkDiscoveryListener, IOFMessageListener {
 	
 	protected Map<RouteId,Integer> lastScheduledRoutes = new HashMap<RouteId,Integer>();
-	protected Map<PathId,Integer> scheduledPaths = new HashMap<PathId,Integer>();
+	protected Map<PathId,Route> scheduledPaths = new HashMap<PathId,Route>();
 	
 	protected class PathId implements Comparable<PathId>{
 		NodePortTuple src;
@@ -345,6 +347,7 @@ public class TopologyManager implements IFloodlightModule, ITopologyService, IRo
 			try {
 				if (ldUpdates.peek() != null)
 					updateTopology();
+				else checkStatistics();
 				handleMiscellaneousPeriodicEvents();
 			}
 			catch (Exception e) {
@@ -362,6 +365,16 @@ public class TopologyManager implements IFloodlightModule, ITopologyService, IRo
 	// To be used for adding any periodic events that's required by topology.
 	protected void handleMiscellaneousPeriodicEvents() {
 		return;
+	}
+	
+	protected void checkStatistics(){
+		
+		if(statisticsCollectorService.isNetworkCongested()){
+			log.info("Some links are congested");
+			createNewInstance();
+			statisticsCollectorService.resetCongestion();
+		}
+			
 	}
 
 	public boolean updateTopology() {
@@ -774,11 +787,12 @@ public class TopologyManager implements IFloodlightModule, ITopologyService, IRo
 			r = ti.getWholeRoute(r, src, srcPort, dst, dstPort);
 		
 		if(routes != null){
-			if(scheduledPaths.get(pid)!=null){
-				r = routes.get(scheduledPaths.get(pid));
+			if(scheduledPaths.get(pid)!=null && routes.contains(scheduledPaths.get(pid))){
+				r = scheduledPaths.get(pid);
 				r = ti.getWholeRoute(r, src, srcPort, dst, dstPort);
 			}else{
 				r = scheduleNewRoute(src,srcPort,dst,dstPort,routes);
+				//r = scheduleLeastCongestedRoute(routes);
 				r = ti.getWholeRoute(r, src, srcPort, dst, dstPort);
 			}
 		}
@@ -786,7 +800,30 @@ public class TopologyManager implements IFloodlightModule, ITopologyService, IRo
 		return r;
 	}
 
+	// scheduling based on traffic load of the possible routes 
+	protected Route scheduleLeastCongestedRoute(List<Route> routes){
+		if(routes != null){
+    		
+			List<Route> temp = new ArrayList<Route>(scheduledPaths.values());
+			int scheduledBefore[] = new int[routes.size()];
+			for(Route r : routes){
+				int i = routes.indexOf(r);
+				while(temp.remove(r)){
+					scheduledBefore[i] += 1;
+				};
+			}
+			if(temp.size() == 0){
+				Arrays.sort(scheduledBefore);
+				return routes.get(scheduledBefore[0]);
+			}else{
+				return scheduledPaths.get(temp.get(0));
+			}
+			
+    	}
+    	return null;
+    }    
 	
+	// scheduling based on round robin
 	private Route scheduleNewRoute(DatapathId src, OFPort srcPort, DatapathId dst, OFPort dstPort, List<Route> routes){
 		PathId pid = new PathId(src,srcPort,dst,dstPort);
 		RouteId rid = new RouteId(src,dst);
@@ -794,13 +831,13 @@ public class TopologyManager implements IFloodlightModule, ITopologyService, IRo
 		
 		if(lastScheduledRoutes.get(rid) == null || lastScheduledRoutes.get(rid) < 0 || routes.size() == 1){
 			lastScheduledRoutes.put(rid, 0);
-			scheduledPaths.put(pid,0);
+			scheduledPaths.put(pid,routes.get(0));
 			return routes.get(0);
 		}else{
 			int last = lastScheduledRoutes.get(rid);
 			last = (last+1)%routes.size();
 			lastScheduledRoutes.put(rid, last);
-			scheduledPaths.put(pid,last);
+			scheduledPaths.put(pid,routes.get(last));
 			return routes.get(last);
 		}
 	}
@@ -1295,7 +1332,13 @@ public class TopologyManager implements IFloodlightModule, ITopologyService, IRo
 	protected boolean createNewInstance(String reason) {
 		Set<NodePortTuple> blockedPorts = new HashSet<NodePortTuple>();
 
-		if (!linksUpdated) return false;
+		if (!linksUpdated && !statisticsCollectorService.isNetworkCongested()) 
+			return false;
+		
+		//reset data structures for scheduling
+		this.lastScheduledRoutes.clear();
+		this.scheduledPaths.clear();
+		
 
 		Map<NodePortTuple, Set<Link>> openflowLinks;
 		openflowLinks =

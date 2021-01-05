@@ -50,6 +50,7 @@ public class StatisticsCollector implements IFloodlightModule, IStatisticsServic
 	protected IDebugCounterService debugCounterService;
 
 	private static boolean isEnabled = false;
+	private static boolean isCongested = false;
 
 	private static int portStatsInterval = 10; /* could be set by REST API, so not final */
 
@@ -86,6 +87,14 @@ public class StatisticsCollector implements IFloodlightModule, IStatisticsServic
 	 *
 	 */
 	
+	public boolean isNetworkCongested(){
+		return isCongested;
+	}
+	
+	public void resetCongestion(){
+		isCongested = false;
+	}
+	
 	public U64 getTxThreshold(){
 		return TX_THRESHOLD;
 	}
@@ -101,7 +110,9 @@ public class StatisticsCollector implements IFloodlightModule, IStatisticsServic
 
 		@Override
 		public void run() {
-						
+			
+			isCongested = false;
+			
 			Map<DatapathId, List<OFStatsReply>> replies = getSwitchStatistics(switchService.getAllSwitchDpids(), OFStatsType.PORT);
 			for (Entry<DatapathId, List<OFStatsReply>> e : replies.entrySet()) {
 				for (OFStatsReply r : e.getValue()) {
@@ -146,6 +157,9 @@ public class StatisticsCollector implements IFloodlightModule, IStatisticsServic
 									pse.getRxBytes(), pse.getTxBytes())
 									);
 							
+							if (isPortCongested(npt.getNodeId(),npt.getPortId()))
+								isCongested = true;
+								
 							//log.info("portStats retrieved: {}", portStats);
 						} else { /* initialize */
 							tentativePortStats.put(npt, SwitchPortBandwidth.of(npt.getNodeId(), npt.getPortId(), U64.ZERO, U64.ZERO, U64.ZERO, pse.getRxBytes(), pse.getTxBytes()));

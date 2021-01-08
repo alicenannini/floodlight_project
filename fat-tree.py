@@ -50,5 +50,5 @@ class FatTree( Topo ):
 topos = { 'fat-tree': ( lambda: FatTree() ) }
 
 '''   
-sudo mn --custom fat-tree.py  --controller=remote,ip=192.168.56.109,port=6653 --topo=fat-tree
+sudo mn --custom fat-tree.py  --controller=remote,ip=192.168.56.110,port=6653 --topo=fat-tree
 '''

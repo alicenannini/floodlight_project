@@ -95,6 +95,10 @@ public class StatisticsCollector implements IFloodlightModule, IStatisticsServic
 		isCongested = false;
 	}
 	
+	protected void setCongestion(){
+		isCongested = true;
+	}
+	
 	public U64 getTxThreshold(){
 		return TX_THRESHOLD;
 	}
@@ -157,9 +161,9 @@ public class StatisticsCollector implements IFloodlightModule, IStatisticsServic
 									pse.getRxBytes(), pse.getTxBytes())
 									);
 							
-							if (isPortCongested(npt.getNodeId(),npt.getPortId()))
-								isCongested = true;
-								
+							if (isPortCongested(npt.getNodeId(),npt.getPortId())){
+								log.info(npt+": "+portStats.get(npt).getBitsPerSecondTx().getBigInteger()+"/"+TX_THRESHOLD.getBigInteger()+" bps");
+							}
 							//log.info("portStats retrieved: {}", portStats);
 						} else { /* initialize */
 							tentativePortStats.put(npt, SwitchPortBandwidth.of(npt.getNodeId(), npt.getPortId(), U64.ZERO, U64.ZERO, U64.ZERO, pse.getRxBytes(), pse.getTxBytes()));
@@ -167,6 +171,7 @@ public class StatisticsCollector implements IFloodlightModule, IStatisticsServic
 					}
 				}
 			}
+			setCongestion();
 		}
 		
 			

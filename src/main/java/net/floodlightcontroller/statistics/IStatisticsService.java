@@ -11,7 +11,7 @@ import net.floodlightcontroller.topology.NodePortTuple;
 
 public interface IStatisticsService extends IFloodlightService {
 	
-	static final U64 TX_THRESHOLD = U64.of(60000); // 90 Mbps
+	static final U64 TX_THRESHOLD = U64.of(0x1312D00); // 20 Mbps
 	
 	U64 getTxThreshold();
 	

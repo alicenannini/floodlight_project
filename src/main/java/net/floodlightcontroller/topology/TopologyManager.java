@@ -370,7 +370,8 @@ public class TopologyManager implements IFloodlightModule, ITopologyService, IRo
 	protected void checkStatistics(){
 		
 		if(statisticsCollectorService.isNetworkCongested()){
-			log.info("Some links are congested");
+			//log.info("Some links are congested");
+			log.info("Recalculating paths after statistics collection");
 			createNewInstance();
 			statisticsCollectorService.resetCongestion();
 		}

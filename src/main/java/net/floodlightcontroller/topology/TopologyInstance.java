@@ -16,6 +16,7 @@
 
 package net.floodlightcontroller.topology;
 
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -531,8 +532,8 @@ public class TopologyInstance {
                 else w = linkCost.get(link);
                 
                 w += getTrafficLoad(link);
-                if(w > 1)
-                	System.out.println(link+": "+w);
+                //if(w > 1)
+                //	System.out.println(link+": "+w);
 
                 int ndist = cdist + w; // the weight of the link
                 if (ndist <= cost.get(neighbor)) {
@@ -562,7 +563,7 @@ public class TopologyInstance {
     protected int getTrafficLoad(Link link){
     	SwitchPortBandwidth spb = statisticsCollectorService.getBandwidthConsumption(link.getSrc(),link.getSrcPort());
     	if(spb != null){
-    		int value = spb.getBitsPerSecondTx().getBigInteger().intValue();
+    		int value = spb.getBitsPerSecondTx().getBigInteger().divide(BigInteger.valueOf(0xF4240)).intValue();
     		// return traffic load in Megabits
     		return value;
     	}

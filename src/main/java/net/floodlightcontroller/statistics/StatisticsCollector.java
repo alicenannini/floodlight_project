@@ -11,6 +11,7 @@ import java.util.Map.Entry;
 import java.util.Set;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import org.projectfloodlight.openflow.protocol.OFPortDescProp;
 import org.projectfloodlight.openflow.protocol.OFPortDescPropEthernet;
@@ -50,7 +51,7 @@ public class StatisticsCollector implements IFloodlightModule, IStatisticsServic
 	protected IDebugCounterService debugCounterService;
 
 	private static boolean isEnabled = false;
-	private static boolean isCongested = false;
+	private static boolean isUpdated = false;
 
 	private static int portStatsInterval = 10; /* could be set by REST API, so not final */
 
@@ -87,16 +88,16 @@ public class StatisticsCollector implements IFloodlightModule, IStatisticsServic
 	 *
 	 */
 	
-	public boolean isNetworkCongested(){
-		return isCongested;
+	public boolean isStatisticUpdated(){
+		return isUpdated;
 	}
 	
-	public void resetCongestion(){
-		isCongested = false;
+	public void resetUpdatedStatistic(){
+		isUpdated = false;
 	}
 	
-	protected void setCongestion(){
-		isCongested = true;
+	protected void setUpdatedStatistic(){
+		isUpdated = true;
 	}
 	
 	public U64 getTxThreshold(){
@@ -115,7 +116,7 @@ public class StatisticsCollector implements IFloodlightModule, IStatisticsServic
 		@Override
 		public void run() {
 			
-			isCongested = false;
+			resetUpdatedStatistic();
 			
 			Map<DatapathId, List<OFStatsReply>> replies = getSwitchStatistics(switchService.getAllSwitchDpids(), OFStatsType.PORT);
 			for (Entry<DatapathId, List<OFStatsReply>> e : replies.entrySet()) {
@@ -171,7 +172,7 @@ public class StatisticsCollector implements IFloodlightModule, IStatisticsServic
 					}
 				}
 			}
-			setCongestion();
+			setUpdatedStatistic();
 		}
 		
 			
@@ -469,6 +470,8 @@ public class StatisticsCollector implements IFloodlightModule, IStatisticsServic
 				}
 			} catch (Exception e) {
 				log.error("Failure retrieving statistics from switch {}. {}", sw, e);
+				if (e instanceof TimeoutException)
+					return values;
 			}
 		}
 		//log.info(values.toString());

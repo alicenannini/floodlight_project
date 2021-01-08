@@ -369,11 +369,11 @@ public class TopologyManager implements IFloodlightModule, ITopologyService, IRo
 	
 	protected void checkStatistics(){
 		
-		if(statisticsCollectorService.isNetworkCongested()){
+		if(statisticsCollectorService.isStatisticUpdated()){
 			//log.info("Some links are congested");
 			log.info("Recalculating paths after statistics collection");
 			createNewInstance();
-			statisticsCollectorService.resetCongestion();
+			statisticsCollectorService.resetUpdatedStatistic();
 		}
 			
 	}
@@ -801,6 +801,25 @@ public class TopologyManager implements IFloodlightModule, ITopologyService, IRo
 		return r;
 	}
 
+	// scheduling based on round robin
+	private Route scheduleNewRoute(DatapathId src, OFPort srcPort, DatapathId dst, OFPort dstPort, List<Route> routes){
+		PathId pid = new PathId(src,srcPort,dst,dstPort);
+		RouteId rid = new RouteId(src,dst);
+		
+		
+		if(lastScheduledRoutes.get(rid) == null || lastScheduledRoutes.get(rid) < 0 || routes.size() == 1){
+			lastScheduledRoutes.put(rid, 0);
+			scheduledPaths.put(pid,routes.get(0));
+			return routes.get(0);
+		}else{
+			int last = lastScheduledRoutes.get(rid);
+			last = (last+1)%routes.size();
+			lastScheduledRoutes.put(rid, last);
+			scheduledPaths.put(pid,routes.get(last));
+			return routes.get(last);
+		}
+	}
+	
 	// scheduling based on traffic load of the possible routes 
 	protected Route scheduleLeastCongestedRoute(List<Route> routes){
 		if(routes != null){
@@ -823,26 +842,7 @@ public class TopologyManager implements IFloodlightModule, ITopologyService, IRo
     	}
     	return null;
     }    
-	
-	// scheduling based on round robin
-	private Route scheduleNewRoute(DatapathId src, OFPort srcPort, DatapathId dst, OFPort dstPort, List<Route> routes){
-		PathId pid = new PathId(src,srcPort,dst,dstPort);
-		RouteId rid = new RouteId(src,dst);
 		
-		
-		if(lastScheduledRoutes.get(rid) == null || lastScheduledRoutes.get(rid) < 0 || routes.size() == 1){
-			lastScheduledRoutes.put(rid, 0);
-			scheduledPaths.put(pid,routes.get(0));
-			return routes.get(0);
-		}else{
-			int last = lastScheduledRoutes.get(rid);
-			last = (last+1)%routes.size();
-			lastScheduledRoutes.put(rid, last);
-			scheduledPaths.put(pid,routes.get(last));
-			return routes.get(last);
-		}
-	}
-
 	@Override
 	public boolean routeExists(DatapathId src, DatapathId dst) {
 		return routeExists(src, dst, true);
@@ -1333,7 +1333,7 @@ public class TopologyManager implements IFloodlightModule, ITopologyService, IRo
 	protected boolean createNewInstance(String reason) {
 		Set<NodePortTuple> blockedPorts = new HashSet<NodePortTuple>();
 
-		if (!linksUpdated && !statisticsCollectorService.isNetworkCongested()) 
+		if (!linksUpdated && !statisticsCollectorService.isStatisticUpdated()) 
 			return false;
 		
 		//reset data structures for scheduling

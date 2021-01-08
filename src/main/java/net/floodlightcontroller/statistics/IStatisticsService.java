@@ -27,8 +27,8 @@ public interface IStatisticsService extends IFloodlightService {
 		
 	boolean isPortCongested(DatapathId dpid, OFPort p);
 	
-	boolean isNetworkCongested();
+	boolean isStatisticUpdated();
 	
-	void resetCongestion();
+	void resetUpdatedStatistic();
 	
 }

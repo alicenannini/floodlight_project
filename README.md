@@ -1,4 +1,6 @@
-Source code from: https://github.com/floodlight/floodlight (v1.1)
+Source code from: https://github.com/floodlight/floodlight (v1.1) \
+Source for the statistics module: [How to Collect Switch Statistics and Compute Bandwidth Utilization](https://floodlight.atlassian.net/wiki/spaces/floodlightcontroller/pages/21856267/How+to+Collect+Switch+Statistics+and+Compute+Bandwidth+Utilization)
+
 
 # A Dynamic Multipath Scheduling Protocol (DMSP) in SDN 
 ## How it works
